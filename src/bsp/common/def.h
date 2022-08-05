@@ -13,6 +13,6 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-#include "stm32f4xx_hal.h"
+#include "stm32l4xx_hal.h"
 
 #endif /* SRC_BSP_COMMON_DEF_H_ */

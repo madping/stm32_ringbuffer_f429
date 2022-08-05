@@ -2,17 +2,17 @@
 #include "qbuffer.h"
 
 
-#define CCMRAM __attribute__ ((section(".ccmram")))
-char buf[256] CCMRAM;
+static char buf[256] __attribute__((section(".sensor_buffer")));
 
 static bool is_open[UART_MAX_CH];
 
 static qbuffer_t qbuffer[UART_MAX_CH];
 static uint8_t rx_buf[256];
-static uint8_t rx_data[UART_MAX_CH];
+//static uint8_t rx_data[UART_MAX_CH];
 
 
 UART_HandleTypeDef huart1;
+DMA_HandleTypeDef hdma_usart1_rx;
 
 
 bool uartInit(void)
@@ -49,9 +49,10 @@ bool uartOpen(uint8_t ch, uint32_t baud)
 	    	  huart1.Init.Mode = UART_MODE_TX_RX;
 	    	  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
 	    	  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+	    	  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+	    	  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
 
-
-	    	  qbufferCreate(&qbuffer[_DEF_UART1], &rx_buf[0], 256);
+	    	  qbufferCreate(&qbuffer[ch], &rx_buf[0], 256);
 
 
 
@@ -64,10 +65,14 @@ bool uartOpen(uint8_t ch, uint32_t baud)
 	    		  ret = true;
 	    		  is_open[ch] = true;
 
-	    		  if(HAL_UART_Receive_IT(&huart1, (uint8_t *)&rx_data[_DEF_UART1], 1) != HAL_OK)
+
+	    		  if(HAL_UART_Receive_DMA(&huart1, (uint8_t *)&rx_buf[0], 256) != HAL_OK)
 	    		  {
 	    			  ret = false;
 	    		  }
+
+	    		  qbuffer[ch].in  = qbuffer[ch].len - hdma_usart1_rx.Instance -> CNDTR;
+	    		  qbuffer[ch].out = qbuffer[ch].in;
 	    	  }
 			  break;
 	}
@@ -83,7 +88,8 @@ uint32_t uartAvailable(uint8_t ch)
     switch(ch)
     {
        case _DEF_UART1:
-    	    ret = qbufferAvailable(&qbuffer[_DEF_UART1]);
+    	    (qbuffer[ch].in = qbuffer[ch].len - hdma_usart1_rx.Instance->CNDTR);
+    	    ret = qbufferAvailable(&qbuffer[ch]);
     	    break;
     }
 
@@ -137,7 +143,7 @@ uint8_t uartWrite(uint8_t ch, uint8_t *p_data, uint32_t length)
 uint32_t uartPrintf(uint8_t ch, char *fmt, ...)
 {
 
-
+    //char buf[256];
 	va_list args;
 	int len;
 	uint32_t ret;
@@ -173,11 +179,13 @@ uint32_t uartGetBaud(uint8_t ch)
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
+#if 0
 	if(huart->Instance == USART1)
 	{
 		qbufferWrite(&qbuffer[_DEF_UART1], &rx_data[_DEF_UART1], 1);
 		HAL_UART_Receive_IT(&huart1, (uint8_t *)&rx_data[_DEF_UART1], 1);
 	}
+#endif
 }
 
 
@@ -197,11 +205,22 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
 {
 
   GPIO_InitTypeDef GPIO_InitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
   if(uartHandle->Instance==USART1)
   {
   /* USER CODE BEGIN USART1_MspInit 0 */
 
   /* USER CODE END USART1_MspInit 0 */
+
+  /** Initializes the peripherals clock
+  */
+    PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART1;
+    PeriphClkInit.Usart1ClockSelection = RCC_USART1CLKSOURCE_PCLK2;
+    if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+    {
+      Error_Handler();
+    }
+
     /* USART1 clock enable */
     __HAL_RCC_USART1_CLK_ENABLE();
 
@@ -216,6 +235,24 @@ void HAL_UART_MspInit(UART_HandleTypeDef* uartHandle)
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
     GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    /* USART1 DMA Init */
+    /* USART1_RX Init */
+    hdma_usart1_rx.Instance = DMA1_Channel5;
+    hdma_usart1_rx.Init.Request = DMA_REQUEST_2;
+    hdma_usart1_rx.Init.Direction = DMA_PERIPH_TO_MEMORY;
+    hdma_usart1_rx.Init.PeriphInc = DMA_PINC_DISABLE;
+    hdma_usart1_rx.Init.MemInc = DMA_MINC_ENABLE;
+    hdma_usart1_rx.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
+    hdma_usart1_rx.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
+    hdma_usart1_rx.Init.Mode = DMA_CIRCULAR;
+    hdma_usart1_rx.Init.Priority = DMA_PRIORITY_LOW;
+    if (HAL_DMA_Init(&hdma_usart1_rx) != HAL_OK)
+    {
+      Error_Handler();
+    }
+
+    __HAL_LINKDMA(uartHandle,hdmarx,hdma_usart1_rx);
 
     /* USART1 interrupt Init */
     HAL_NVIC_SetPriority(USART1_IRQn, 0, 0);
@@ -242,6 +279,9 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
     PA10     ------> USART1_RX
     */
     HAL_GPIO_DeInit(GPIOA, GPIO_PIN_9|GPIO_PIN_10);
+
+    /* USART1 DMA DeInit */
+    HAL_DMA_DeInit(uartHandle->hdmarx);
 
     /* USART1 interrupt Deinit */
     HAL_NVIC_DisableIRQ(USART1_IRQn);

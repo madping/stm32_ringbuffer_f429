@@ -6,24 +6,23 @@ int main(void)
 
 
 	bspInit();
-	uartInit();
+	Segment_Init();
+
+	//uartInit();
 
 
 	//LED_Init();
 
-    uartOpen(_DEF_UART1, 57600);
+    //uartOpen(_DEF_UART1, 57600);
 
-    //uint32_t pre_time;
-    //pre_time = millis();
+   uint8_t fnd [] = {0x7B, 0x0A, 0xB3, 0x9B, 0xCA, 0xD9, 0xF9, 0x0B, 0xFB, 0xDB};
 
 
 	while(1)
 	{
 
-		//if(millis()-pre_time >= 100)
-		//{
-		//	 pre_time = millis();
 
+          /*
 		  if(uartAvailable(_DEF_UART1)>0)
 		  {
 			 uint8_t rx_data;
@@ -32,7 +31,13 @@ int main(void)
 		     uartPrintf(_DEF_UART1, "uart1 %c %X\n", rx_data, rx_data);
 
 		  }
-		//}
+		  */
+
+	   for(int i=0; i<=10; i++)
+	   {
+           GPIOB -> ODR = fnd[i];
+	       HAL_Delay(1000);
+	   }
 
 	}
 

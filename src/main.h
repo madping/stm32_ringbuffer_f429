@@ -5,6 +5,7 @@
 #include "hw.h"
 #include "led.h"
 #include "usart.h"
+#include "7_segment.h"
 
 #include "delay_us.h"
 
